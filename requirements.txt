@@ -1,0 +1,2 @@
+paramiko==3.4.1
+loguru==0.6.0
