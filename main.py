@@ -13,26 +13,33 @@ log_format = "<white>{time:HH:mm:ss}</white> | <level>{level: <8}</level> | <whi
 logger.add(stderr, level="INFO", format=log_format)
 
 
-def execute_command_on_server(name: str, host: str, username: str, password: str, command: str):
+def execute_command_on_server(name: str, host: str, username: str, password: str, commands_list: list[str],
+                              stop_on_fail: bool = True):
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-    try:
-        ssh.connect(hostname=host, username=username, password=password)
+    for command in commands_list:
+        try:
+            ssh.connect(hostname=host, username=username, password=password)
 
-        stdin, stdout, _stderr = ssh.exec_command(command)
-        output = stdout.read().decode()
-        error = _stderr.read().decode()
+            stdin, stdout, _stderr = ssh.exec_command(command)
+            output = stdout.read().decode()
+            error = _stderr.read().decode()
 
-        logger.info(f"{name} - output:\n{output}")
-        if error:
-            logger.error(f"{name} - output:\n{error}")
+            logger.info(f"{name} - output:\n{output}")
+            if error:
+                logger.error(f"{name} - output:\n{error}")
+                if stop_on_fail:
+                    logger.warning(f"{name} - stopping commands execution")
+                    break
 
-    except Exception as e:
-        logger.error(f"{name} - failed to execute command: {e}")
+        except Exception as e:
+            logger.error(f"{name} - failed to execute command: {e}")
+            if stop_on_fail:
+                logger.warning(f"{name} - stopping commands execution")
+                break
 
-    finally:
-        ssh.close()
+    ssh.close()
 
 
 def main():
@@ -50,7 +57,8 @@ def main():
             logger.info(f"{name} - waiting {delay} seconds")
             time.sleep(delay)
 
-        execute_command_on_server(name, host, username, password, commands[config["command"]])
+        commands_list = [commands[name] for name in config["commands"]]
+        execute_command_on_server(name, host, username, password, commands_list, config["stop_on_fail"])
 
 
 if __name__ == '__main__':
