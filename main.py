@@ -46,6 +46,9 @@ def main():
     with open('servers.txt', 'r') as f:
         servers = [i.strip() for i in f.readlines()]
 
+    if config["shuffle_servers"]:
+        random.shuffle(servers)
+        
     for server in servers:
         name, host, username, password = server.split('|', 3)
 
