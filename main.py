@@ -11,6 +11,7 @@ from config import config, commands
 logger.remove()
 log_format = "<white>{time:HH:mm:ss}</white> | <level>{level: <8}</level> | <white>{message}</white>"
 logger.add(stderr, level="INFO", format=log_format)
+logger.add("debug_log.log", level="DEBUG", format=log_format)
 
 
 def execute_command_on_server(name: str, host: str, username: str, password: str, commands_list: list[str],
