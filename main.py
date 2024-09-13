@@ -7,7 +7,6 @@ from loguru import logger
 
 from config import config, commands
 
-
 logger.remove()
 log_format = "<white>{time:HH:mm:ss}</white> | <level>{level: <8}</level> | <white>{message}</white>"
 logger.add(stderr, level="INFO", format=log_format)
@@ -28,6 +27,8 @@ def execute_command_on_server(name: str, host: str, username: str, password: str
             error = _stderr.read().decode()
 
             logger.info(f"{name} - output:\n{output}")
+            time.sleep(random.randint(1, 3))
+
             if error:
                 logger.error(f"{name} - output:\n{error}")
                 if stop_on_fail:
@@ -49,7 +50,7 @@ def main():
 
     if config["shuffle_servers"]:
         random.shuffle(servers)
-        
+
     for server in servers:
         name, host, username, password = server.split('|', 3)
 
