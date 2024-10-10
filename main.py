@@ -5,7 +5,7 @@ from sys import stderr
 import paramiko
 from loguru import logger
 
-from config import config, commands
+from config import config, general_commands, named_commands
 
 logger.remove()
 log_format = "<white>{time:HH:mm:ss}</white> | <level>{level: <8}</level> | <white>{message}</white>"
@@ -14,7 +14,10 @@ logger.add("debug_log.log", level="DEBUG", format=log_format)
 
 
 def execute_command_on_server(name: str, host: str, username: str, password: str, commands_list: list[str],
-                              stop_on_fail: bool = True):
+                              stop_on_fail: bool = True, delay_sec: list[int] | None = None):
+    if delay_sec is None:
+        delay_sec = [0, 0]
+
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
@@ -41,6 +44,9 @@ def execute_command_on_server(name: str, host: str, username: str, password: str
                 logger.warning(f"{name} - stopping commands execution")
                 break
 
+        delay = random.randint(delay_sec[0], delay_sec[1])
+        time.sleep(delay)
+
     ssh.close()
 
 
@@ -62,7 +68,18 @@ def main():
             logger.info(f"{name} - waiting {delay} seconds")
             time.sleep(delay)
 
-        commands_list = [commands[name] for name in config["commands"]]
+        if config["use_named_commands"]:
+            try:
+                commands_list = []
+                for command in config["commands"]:
+                    if command in named_commands:
+                        commands_list += named_commands[command][name]
+            except KeyError:
+                logger.error(f"{name} - missing some of named commands for this server, skipping")
+                continue
+        else:
+            commands_list = [general_commands[name] for name in config["commands"]]
+
         execute_command_on_server(name, host, username, password, commands_list, config["stop_on_fail"])
 
 
