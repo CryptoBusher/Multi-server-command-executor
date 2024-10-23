@@ -1,4 +1,5 @@
 config = {
+    "run_async": True,
     "use_named_commands": False,                        # режим персональных команд, которые определены в словаре "named_commands"
     "commands": [                                       # названия команд из словаря "commands" ниже (или из словаря "named_commands", если включен соответствующий режим)
         "run_node"
@@ -13,7 +14,7 @@ config = {
     ]
 }
 
-commands = {
+general_commands = {
     "open_port": "sudo ufw allow 17690/tcp",
 
     "run_node": """
