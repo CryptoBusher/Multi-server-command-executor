@@ -1,8 +1,8 @@
 import time
 import random
 import paramiko
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from sys import stderr
 from loguru import logger
 
@@ -19,111 +19,45 @@ def execute_ssh_command(host, username, password, command):
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     ssh.connect(hostname=host, username=username, password=password)
 
-    stdin, stdout, stderr = ssh.exec_command(command)
-    output = stdout.read().decode()
-    error = stderr.read().decode()
+    _stdin, _stdout, _stderr = ssh.exec_command(command)
+    output = _stdout.read().decode()
+    error = _stderr.read().decode()
 
     ssh.close()
 
     return output, error
 
 
-async def execute_command_on_server_async(name: str, host: str, username: str, password: str, commands_list: list[str],
-                                          stop_on_fail: bool = True, delay_sec: list[int] | None = None):
-    if delay_sec is None:
-        delay_sec = [0, 0]
+def execute_command_on_server(name: str, host: str, username: str, password: str, commands_list: list[str]):
+    logger.info(f"Executing commands on server {name}, host: {host}")
 
-    loop = asyncio.get_event_loop()
+    commands_delay_sec = config["commands_delay_sec"]
+    commands_with_sleep = []
     for command in commands_list:
-        try:
-            output, error = await loop.run_in_executor(
-                None, execute_ssh_command, host, username, password, command)
+        commands_with_sleep.append(command)
+        commands_with_sleep.append(f"sleep {random.randint(commands_delay_sec[0], commands_delay_sec[1])}")
 
-            logger.info(f"{name} - output:\n{output}")
-            await asyncio.sleep(random.randint(1, 3))
+    separator = f" && " if config["stop_on_fail"] else " ; "
+    combined_command = separator.join(commands_with_sleep)
 
-            if error:
-                logger.error(f"{name} - error:\n{error}")
-                if stop_on_fail:
-                    logger.warning(f"{name} - stopping commands execution")
-                    break
+    try:
+        output, error = execute_ssh_command(host, username, password, combined_command)
 
-        except Exception as e:
-            logger.error(f"{name} - failed to execute command: {e}")
-            if stop_on_fail:
-                logger.warning(f"{name} - stopping commands execution")
-                break
+        logger.info(f'{name} - finished processing (see debug log for output details)')
+        logger.debug(f"{name} - output:\n{output}")
+        if error:
+            logger.warning(f'{name} - error in output occurred (see debug log for output details)')
+            logger.debug(f"{name} - error:\n{error}")
 
-        delay = random.randint(delay_sec[0], delay_sec[1])
-        await asyncio.sleep(delay)
+    except Exception as e:
+        logger.error(f"{name} - failed to execute command: {e}")
 
-
-def execute_command_on_server_sync(name: str, host: str, username: str, password: str, commands_list: list[str],
-                                   stop_on_fail: bool = True, delay_sec: list[int] | None = None):
-    if delay_sec is None:
-        delay_sec = [0, 0]
-
-    for command in commands_list:
-        try:
-            output, error = execute_ssh_command(host, username, password, command)
-
-            logger.info(f"{name} - output:\n{output}")
-            time.sleep(random.randint(1, 3))
-
-            if error:
-                logger.error(f"{name} - error:\n{error}")
-                if stop_on_fail:
-                    logger.warning(f"{name} - stopping commands execution")
-                    break
-
-        except Exception as e:
-            logger.error(f"{name} - failed to execute command: {e}")
-            if stop_on_fail:
-                logger.warning(f"{name} - stopping commands execution")
-                break
-
-        delay = random.randint(delay_sec[0], delay_sec[1])
-        time.sleep(delay)
+    delay = random.randint(config["delay_sec"][0], config["delay_sec"][1])
+    logger.info(f"{name} - sleeping for {delay} seconds after command execution")
+    time.sleep(delay)
 
 
-async def main_async():
-    with open('servers.txt', 'r') as f:
-        servers = [i.strip() for i in f.readlines()]
-
-    if config["shuffle_servers"]:
-        random.shuffle(servers)
-
-    tasks = []
-    for server in servers:
-        name, host, username, password = server.split('|', 3)
-
-        if name in config["skip_servers"]:
-            continue
-
-        delay = random.randint(config["delay_sec"][0], config["delay_sec"][1])
-        if delay > 0:
-            logger.info(f"{name} - waiting {delay} seconds")
-            await asyncio.sleep(delay)
-
-        if config["use_named_commands"]:
-            try:
-                commands_list = []
-                for command in config["commands"]:
-                    if command in named_commands:
-                        commands_list += named_commands[command][name]
-            except KeyError:
-                logger.error(f"{name} - missing some of named commands for this server, skipping")
-                continue
-        else:
-            commands_list = [general_commands[name] for name in config["commands"]]
-
-        tasks.append(
-            execute_command_on_server_async(name, host, username, password, commands_list, config["stop_on_fail"]))
-
-    await asyncio.gather(*tasks)
-
-
-def main_sync():
+def main(threads: int = 5):
     with open('servers.txt', 'r') as f:
         servers = [i.strip() for i in f.readlines()]
 
@@ -133,34 +67,31 @@ def main_sync():
     if config["shuffle_servers"]:
         random.shuffle(servers)
 
-    for server in servers:
-        name, host, username, password = server.split('|', 3)
+    with ThreadPoolExecutor(max_workers=config.get("max_threads", threads)) as executor:
+        futures = []
+        for server in servers:
+            name, host, username, password = server.split('|', 3)
 
-        if name in config["skip_servers"]:
-            continue
-
-        delay = random.randint(config["delay_sec"][0], config["delay_sec"][1])
-        if delay > 0:
-            logger.info(f"{name} - waiting {delay} seconds")
-            time.sleep(delay)
-
-        if config["use_named_commands"]:
-            try:
-                commands_list = []
-                for command in config["commands"]:
-                    if command in named_commands:
-                        commands_list += named_commands[command][name]
-            except KeyError:
-                logger.error(f"{name} - missing some of named commands for this server, skipping")
+            if name in config["skip_servers"]:
                 continue
-        else:
-            commands_list = [general_commands[name] for name in config["commands"]]
 
-        execute_command_on_server_sync(name, host, username, password, commands_list, config["stop_on_fail"])
+            if config["use_named_commands"]:
+                try:
+                    commands_list = []
+                    for command in config["commands"]:
+                        if command in named_commands:
+                            commands_list += named_commands[command][name]
+                except KeyError:
+                    logger.warning(f"{name} - missing some of named commands for this server, skipping")
+                    continue
+            else:
+                commands_list = [general_commands[name] for name in config["commands"]]
+
+            futures.append(executor.submit(execute_command_on_server, name, host, username, password, commands_list))
+
+        for future in as_completed(futures):
+            future.result()
 
 
 if __name__ == '__main__':
-    if config["run_async"]:
-        asyncio.run(main_async())
-    else:
-        main_sync()
+    main(config["threads"])

@@ -1,5 +1,5 @@
 config = {
-    "run_async": True,
+    "threads": 10,                                      # количество потоков, (1+)
     "use_named_commands": False,                        # режим персональных команд, которые определены в словаре "named_commands"
     "commands": [                                       # названия команд из словаря "commands" ниже (или из словаря "named_commands", если включен соответствующий режим)
         "run_node"
